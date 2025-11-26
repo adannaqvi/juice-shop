@@ -1,14 +1,16 @@
-/*
- * Copyright (c) 2014-2026 Bjoern Kimminich & the OWASP Juice Shop contributors.
- * SPDX-License-Identifier: MIT
- */
-
 'use strict'
 
 module.exports = function (grunt) {
-  const os = grunt.option('os') || process.env.PCKG_OS_NAME || ''
-  const platform = grunt.option('platform') || process.env.PCKG_CPU_ARCH || ''
-  const node = grunt.option('node') || process.env.nodejs_version || process.env.PCKG_NODE_VERSION || ''
+  const path = require('node:path')
+
+  function sanitize(input) {
+    if (!input) return ''
+    return /^[a-zA-Z0-9_-]+$/.test(input) ? input : ''
+  }
+
+  const os = sanitize(grunt.option('os') || process.env.PCKG_OS_NAME || '')
+  const platform = sanitize(grunt.option('platform') || process.env.PCKG_CPU_ARCH || '')
+  const node = sanitize(process.env.nodejs_version || process.env.PCKG_NODE_VERSION || grunt.option('node') || '')
 
   grunt.initConfig({
     pkg: grunt.file.readJSON('package.json'),
@@ -28,8 +30,19 @@ module.exports = function (grunt) {
       pckg: {
         options: {
           mode: os === 'linux' ? 'tgz' : 'zip',
-          archive: 'dist/<%= pkg.name %>-<%= pkg.version %>' + (node ? ('_node' + node) : '') + (os ? ('_' + os) : '') + (platform ? ('_' + platform) : '') + (os === 'linux' ? '.tgz' : '.zip')
+          archive: (function () {
+            const name = grunt.template.process('<%= pkg.name %>')
+            const version = grunt.template.process('<%= pkg.version %>')
+            const fileName =
+              name + '-' + version +
+              (node ? ('_node' + node) : '') +
+              (os ? ('_' + os) : '') +
+              (platform ? ('_' + platform) : '') +
+              (os === 'linux' ? '.tgz' : '.zip')
+            return path.join('dist', fileName)
+          })()
         },
+
         files: [
           {
             src: [
@@ -62,7 +75,10 @@ module.exports = function (grunt) {
               'uploads/complaints/.gitkeep',
               'views/**'
             ],
-            dest: 'juice-shop_<%= pkg.version %>/'
+            dest: (function () {
+              const version = grunt.template.process('<%= pkg.version %>')
+              return `juice-shop_${version}/`
+            })()
           }
         ]
       }
@@ -72,14 +88,21 @@ module.exports = function (grunt) {
   grunt.registerTask('checksum', 'Create .md5 checksum files', function () {
     const fs = require('node:fs')
     const crypto = require('node:crypto')
+
     fs.readdirSync('dist/').forEach(file => {
-      const buffer = fs.readFileSync('dist/' + file)
+      if (file.includes('..')) return
+
+      const filePath = path.join('dist', file)
+      const buffer = fs.readFileSync(filePath)
+
       const md5 = crypto.createHash('md5')
       md5.update(buffer)
       const md5Hash = md5.digest('hex')
-      const md5FileName = 'dist/' + file + '.md5'
+
+      const md5FileName = filePath + '.md5'
       grunt.file.write(md5FileName, md5Hash)
-      grunt.log.write(`Checksum ${md5Hash} written to file ${md5FileName}.`).verbose.write('...').ok()
+
+      grunt.log.write(`Checksum ${md5Hash} written to file ${md5FileName}.`).ok()
       grunt.log.writeln()
     })
   })
